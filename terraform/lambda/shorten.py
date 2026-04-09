@@ -4,22 +4,42 @@ import string
 import boto3
 import os
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(os.environ["TABLE_NAME"])
 
+MAX_RETRIES = 3
+
 def lambda_handler(event, context):
     try:
         body = json.loads(event.get("body", "{}"))
-        original_url = body.get("url", "").strip()
+        original_url = body.get("original_url", "").strip()
 
+        # Validate presence
         if not original_url:
             return response(400, {"error": "URL is required"})
 
+        # Validate scheme
         if not original_url.startswith(("http://", "https://")):
             return response(400, {"error": "URL must start with http:// or https://"})
 
-        short_id = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
+        # Validate parseable URL with a real domain
+        parsed = urlparse(original_url)
+        if not parsed.netloc or "." not in parsed.netloc:
+            return response(400, {"error": "Invalid URL — must include a valid domain"})
+
+        # Generate unique short ID with collision check
+        short_id = None
+        for _ in range(MAX_RETRIES):
+            candidate = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
+            result = table.get_item(Key={"short_id": candidate})
+            if "Item" not in result:
+                short_id = candidate
+                break
+
+        if not short_id:
+            return response(500, {"error": "Could not generate a unique ID, please try again"})
 
         table.put_item(Item={
             "short_id": short_id,
@@ -34,6 +54,8 @@ def lambda_handler(event, context):
             "short_id": short_id
         })
 
+    except json.JSONDecodeError:
+        return response(400, {"error": "Invalid request body"})
     except Exception as e:
         return response(500, {"error": str(e)})
 
