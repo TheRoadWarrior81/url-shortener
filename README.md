@@ -6,7 +6,9 @@ A serverless URL shortener built on AWS. Paste a long URL, get a short one, trac
 
 ---
 
-![alt text](image.png)
+## Architecture
+
+![Architecture diagram](docs/architecture.png)
 
 ## What it does
 
