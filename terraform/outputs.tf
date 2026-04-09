@@ -1,19 +1,15 @@
 output "api_endpoint" {
-  description = "API Gateway endpoint URL"
-  value       = aws_apigatewayv2_stage.default.invoke_url
+  value = aws_apigatewayv2_stage.default.invoke_url
 }
 
-output "dynamodb_table_name" {
-  description = "DynamoDB table name"
-  value       = aws_dynamodb_table.urls.name
+output "frontend_bucket" {
+  value = aws_s3_bucket.frontend.bucket
 }
 
-output "lambda_shorten_arn" {
-  description = "Shorten Lambda function ARN"
-  value       = aws_lambda_function.shorten.arn
+output "cloudfront_id" {
+  value = aws_cloudfront_distribution.frontend.id
 }
 
-output "lambda_redirect_arn" {
-  description = "Redirect Lambda function ARN"
-  value       = aws_lambda_function.redirect.arn
+output "frontend_url" {
+  value = "https://${var.subdomain}.${var.domain_name}"
 }
