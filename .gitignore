@@ -1,6 +1,12 @@
-node_modules/
-terraform/.terraform/
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars.json
+
+# Terraform artifacts
 terraform/lambda/*.zip
+
+# Node
 node_modules/
-terraform/.terraform/
-terraform/lambda/*.zip
