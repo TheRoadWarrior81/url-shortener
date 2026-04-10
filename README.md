@@ -10,6 +10,16 @@ A serverless URL shortener built on AWS. Paste a long URL, get a short one, trac
 
 ![Architecture diagram](docs/architecture.png)
 
+Three Lambda functions sit behind API Gateway:
+
+- **`POST /shorten`** — validates the URL, generates a unique 6-character ID with collision checking, stores it in DynamoDB
+- **`GET /{short_id}`** — looks up the original URL, increments the click counter, returns a 301 redirect
+- **`GET /stats/{short_id}`** — returns the original URL and current click count
+
+The React frontend is deployed to S3 and served via CloudFront with a custom subdomain (`short.pranav-main-bucket-1.click`). CloudFront uses an Origin Access Control (OAC) policy so the S3 bucket remains private.
+
+---
+
 ## What it does
 
 - Shortens any valid URL to a 6-character alias
@@ -30,18 +40,7 @@ A serverless URL shortener built on AWS. Paste a long URL, get a short one, trac
 | Database | DynamoDB (on-demand) |
 | IaC | Terraform |
 | TLS | AWS Certificate Manager |
-
----
-
-## Architecture
-
-Three Lambda functions sit behind API Gateway:
-
-- **`POST /shorten`** — validates the URL, generates a unique 6-character ID with collision checking, stores it in DynamoDB
-- **`GET /{short_id}`** — looks up the original URL, increments the click counter, returns a 301 redirect
-- **`GET /stats/{short_id}`** — returns the original URL and current click count
-
-The React frontend is deployed to S3 and served via CloudFront with a custom subdomain (`short.pranav-main-bucket-1.click`). CloudFront uses an Origin Access Control (OAC) policy so the S3 bucket remains private.
+| Monitoring | CloudWatch Logs (automatic via Lambda) |
 
 ---
 
@@ -113,11 +112,14 @@ aws cloudfront create-invalidation \
 
 **Short ID collision handling:** The shorten Lambda generates a random 6-character alphanumeric ID (~56 billion possibilities), checks DynamoDB for existence, and retries up to 3 times if there's a collision. At current scale this is effectively never needed, but it's the correct approach.
 
+**Link expiry:** Short URLs expire after 30 days using DynamoDB's native TTL feature. An `expires_at` Unix timestamp is written on creation and DynamoDB automatically deletes expired items in the background — no cleanup Lambda or cron job needed.
+
+**Security:** The S3 bucket is fully private — only CloudFront can read it via an Origin Access Control policy. HTTPS is enforced at the CloudFront layer (HTTP redirects to HTTPS). The Lambda IAM role is scoped to only the three DynamoDB actions it needs (PutItem, GetItem, UpdateItem). CORS on API Gateway is restricted to the frontend domain. Lambda logs ship automatically to CloudWatch Logs.
+
 ---
 
 ## Known limitations / future improvements
 
 - No duplicate URL detection — shortening the same URL twice creates two entries (would require a GSI on `original_url`)
-- No link expiry / TTL
 - Click count is only refreshed on demand (no real-time updates)
 - No authentication — anyone can shorten URLs
