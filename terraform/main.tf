@@ -31,6 +31,11 @@ resource "aws_dynamodb_table" "urls" {
     type = "S"
   }
 
+  ttl {
+    attribute_name = "expires_at"
+    enabled        = true
+  }
+
   tags = {
     Project = var.project_name
   }
