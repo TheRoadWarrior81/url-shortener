@@ -3,7 +3,7 @@ import random
 import string
 import boto3
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 
 dynamodb = boto3.resource("dynamodb")
@@ -46,6 +46,7 @@ def lambda_handler(event, context):
             "original_url": original_url,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "clicks": 0
+            "expires_at": int((datetime.now(timezone.utc) + timedelta(days=30)).timestamp())
         })
 
         domain = os.environ["DOMAIN"]
