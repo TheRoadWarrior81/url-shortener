@@ -78,12 +78,57 @@ resource "aws_cloudfront_distribution" "frontend" {
   default_root_object = "index.html"
   aliases             = ["${var.subdomain}.${var.domain_name}"]
 
+  # Origin 1: S3 frontend bucket
   origin {
     domain_name              = aws_s3_bucket.frontend.bucket_regional_domain_name
     origin_id                = "s3-frontend"
     origin_access_control_id = aws_cloudfront_origin_access_control.frontend.id
   }
 
+  # Origin 2: API Gateway (handles redirect and stats)
+  origin {
+    domain_name = replace(aws_apigatewayv2_api.api.api_endpoint, "https://", "")
+    origin_id   = "apigw"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  # Behavior 1: /stats/* → API Gateway
+  ordered_cache_behavior {
+    path_pattern           = "/stats/*"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "apigw"
+    viewer_protocol_policy = "redirect-to-https"
+
+    # CachingDisabled managed policy
+    cache_policy_id = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+
+    # AllViewerExceptHostHeader managed policy
+    origin_request_policy_id = "b689b0a8-53d0-40ab-baf2-68738e2966ac"
+  }
+
+  # Behavior 2: /{short_id} → API Gateway (any single-segment path)
+  ordered_cache_behavior {
+    path_pattern           = "/r/*"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "apigw"
+    viewer_protocol_policy = "redirect-to-https"
+
+    # CachingDisabled managed policy
+    cache_policy_id = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+
+    # AllViewerExceptHostHeader managed policy
+    origin_request_policy_id = "b689b0a8-53d0-40ab-baf2-68738e2966ac"
+  }
+
+  # Default behavior: everything else → S3 frontend
   default_cache_behavior {
     allowed_methods        = ["GET", "HEAD"]
     cached_methods         = ["GET", "HEAD"]
@@ -98,13 +143,6 @@ resource "aws_cloudfront_distribution" "frontend" {
     min_ttl     = 0
     default_ttl = 3600
     max_ttl     = 86400
-  }
-
-  # SPA fallback — 404 from S3 → serve index.html → React handles the route
-  custom_error_response {
-    error_code         = 404
-    response_code      = 200
-    response_page_path = "/index.html"
   }
 
   restrictions {
@@ -124,7 +162,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 }
 
-# ── S3 bucket policy — allow CloudFront OAC only ──────────────────────────────
+# ── S3 bucket policy — allow CloudFront OAC only ─────────────────────────────
 
 resource "aws_s3_bucket_policy" "frontend" {
   bucket = aws_s3_bucket.frontend.id

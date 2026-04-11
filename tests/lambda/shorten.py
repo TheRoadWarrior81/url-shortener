@@ -54,7 +54,7 @@ def lambda_handler(event, context):
 
         domain = os.environ["DOMAIN"]
         return response(200, {
-            "short_url": f"https://{domain}/r/{short_id}",
+            "short_url": f"https://{domain}/{short_id}",
             "short_id": short_id
         })
 

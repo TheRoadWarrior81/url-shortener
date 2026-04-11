@@ -26,7 +26,7 @@ def lambda_handler(event, context):
         )
 
         return {
-            "statusCode": 302,
+            "statusCode": 301,
             "headers": {
                 "Location": item["original_url"],
                 "Access-Control-Allow-Origin": "*"

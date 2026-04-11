@@ -179,7 +179,7 @@ resource "aws_apigatewayv2_route" "shorten" {
 
 resource "aws_apigatewayv2_route" "redirect" {
   api_id    = aws_apigatewayv2_api.api.id
-  route_key = "GET /{short_id}"
+  route_key = "GET /r/{short_id}"
   target    = "integrations/${aws_apigatewayv2_integration.redirect.id}"
 }
 
