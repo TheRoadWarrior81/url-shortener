@@ -1,6 +1,6 @@
 # URL Shortener
 
-A serverless URL shortener built on AWS. Paste a long URL, get a short one, track how many times it's been clicked.
+A serverless URL shortener built on AWS. Paste a long URL, get a short one, track clicks.
 
 **Live:** [short.pranav-main-bucket-1.click](https://short.pranav-main-bucket-1.click)
 
@@ -8,24 +8,21 @@ A serverless URL shortener built on AWS. Paste a long URL, get a short one, trac
 
 ## Architecture
 
-![Architecture diagram](docs/architecture.png)
+```
+Browser → CloudFront → API Gateway → Lambda → DynamoDB
+                ↓
+               S3 (React frontend)
+```
 
-Three Lambda functions sit behind API Gateway:
+Three Lambda functions behind API Gateway (HTTP API v2):
 
-- **`POST /shorten`** — validates the URL, generates a unique 6-character ID with collision checking, stores it in DynamoDB
-- **`GET /{short_id}`** — looks up the original URL, increments the click counter, returns a 301 redirect
-- **`GET /stats/{short_id}`** — returns the original URL and current click count
+| Route | Lambda | What it does |
+|---|---|---|
+| `POST /shorten` | `shorten.py` | Validates URL, generates collision-safe 6-char ID, writes to DynamoDB with 30-day TTL |
+| `GET /r/{short_id}` | `redirect.py` | Looks up original URL, increments click counter, returns 302 |
+| `GET /stats/{short_id}` | `stats.py` | Returns original URL and click count |
 
-The React frontend is deployed to S3 and served via CloudFront with a custom subdomain (`short.pranav-main-bucket-1.click`). CloudFront uses an Origin Access Control (OAC) policy so the S3 bucket remains private.
-
----
-
-## What it does
-
-- Shortens any valid URL to a 6-character alias
-- Redirects short links to their original destination
-- Tracks click counts per short link
-- Serves a React frontend over HTTPS via a custom domain
+The React frontend is deployed to a private S3 bucket served through CloudFront with a custom domain. CloudFront uses two origin behaviors: static assets go to S3, `/r/*` and `/stats/*` paths route to API Gateway.
 
 ---
 
@@ -39,8 +36,9 @@ The React frontend is deployed to S3 and served via CloudFront with a custom sub
 | Compute | AWS Lambda (Python 3.12) |
 | Database | DynamoDB (on-demand) |
 | IaC | Terraform |
-| TLS | AWS Certificate Manager |
-| Monitoring | CloudWatch Logs (automatic via Lambda) |
+| TLS | AWS Certificate Manager (us-east-1) |
+| Testing | Python unittest + moto (45 tests, zero real AWS calls) |
+| Observability | CloudWatch Logs |
 
 ---
 
@@ -62,7 +60,22 @@ url-shortener/
     │   ├── App.tsx
     │   └── App.css
     └── .env.production
+tests/
+├── test_shorten.py      # 20 tests
+├── test_redirect.py     # 12 tests
+└── test_stats.py        # 13 tests
 ```
+
+---
+
+## Running tests
+
+```bash
+pip install 'moto[dynamodb]' pytest
+python -m pytest tests/ -v
+```
+
+All tests mock DynamoDB with moto — no AWS credentials or live infrastructure needed. Coverage includes happy paths, validation errors, malformed input, collision retry logic, TTL correctness, and CORS headers.
 
 ---
 
@@ -72,14 +85,10 @@ url-shortener/
 
 ```bash
 # Frontend
-cd frontend
-npm install
-npm run dev
+cd frontend && npm install && npm run dev
 
-# Terraform (from terraform/)
-terraform init
-terraform plan
-terraform apply
+# Infrastructure
+cd terraform && terraform init && terraform plan
 ```
 
 ---
@@ -104,22 +113,24 @@ aws cloudfront create-invalidation \
 
 ## Design decisions
 
-**Why DynamoDB?** The access pattern is almost entirely single-item lookups by `short_id` — a hash key lookup is O(1) and costs nothing at low traffic with on-demand billing.
+**DynamoDB over RDS** — the access pattern is almost entirely single-item lookups by `short_id`. A hash key lookup is O(1) and on-demand billing means zero cost at zero traffic.
 
-**Why Lambda over a server?** URL shorteners are read-heavy but bursty. Lambda scales to zero when idle and handles spikes without provisioning.
+**Lambda over a server** — URL shorteners are bursty. Lambda scales to zero when idle and handles spikes without provisioning. Cold starts are acceptable for a redirect use case.
 
-**Why CloudFront in front of S3?** The S3 bucket stays private (no public access). CloudFront handles HTTPS termination, caching, and the custom domain — and the OAC policy ensures only CloudFront can read the bucket.
+**302 over 301** — redirect returns 302 (temporary) not 301 (permanent). Browsers cache 301s indefinitely, which would prevent click counts from incrementing after the first visit.
 
-**Short ID collision handling:** The shorten Lambda generates a random 6-character alphanumeric ID (~56 billion possibilities), checks DynamoDB for existence, and retries up to 3 times if there's a collision. At current scale this is effectively never needed, but it's the correct approach.
+**CloudFront path-based routing** — rather than a separate subdomain for the API, CloudFront uses ordered cache behaviors: `/r/*` and `/stats/*` route to API Gateway, everything else serves the S3 frontend. The S3 bucket is fully private — only CloudFront can read it via an Origin Access Control policy.
 
-**Link expiry:** Short URLs expire after 30 days using DynamoDB's native TTL feature. An `expires_at` Unix timestamp is written on creation and DynamoDB automatically deletes expired items in the background — no cleanup Lambda or cron job needed.
+**Collision handling** — `shorten.py` generates a random 6-character alphanumeric ID (~56 billion possibilities), checks DynamoDB for a collision, and retries up to 3 times. At current scale this is effectively never triggered, but the logic is tested explicitly.
 
-**Security:** The S3 bucket is fully private — only CloudFront can read it via an Origin Access Control policy. HTTPS is enforced at the CloudFront layer (HTTP redirects to HTTPS). The Lambda IAM role is scoped to only the three DynamoDB actions it needs (PutItem, GetItem, UpdateItem). CORS on API Gateway is restricted to the frontend domain. Lambda logs ship automatically to CloudWatch Logs.
+**TTL via DynamoDB** — short URLs expire after 30 days using DynamoDB's native TTL feature. An `expires_at` Unix timestamp is written on creation; DynamoDB deletes expired items automatically with no cleanup Lambda or cron job.
+
+**IAM least privilege** — the Lambda role is scoped to exactly three DynamoDB actions: `PutItem`, `GetItem`, `UpdateItem`. No wildcards.
 
 ---
 
-## Known limitations / future improvements
+## Known limitations
 
-- No duplicate URL detection — shortening the same URL twice creates two entries (would require a GSI on `original_url`)
-- Click count is only refreshed on demand (no real-time updates)
+- No duplicate URL detection — shortening the same URL twice creates two separate entries (a GSI on `original_url` would fix this)
+- Click count requires a manual refresh — no real-time updates
 - No authentication — anyone can shorten URLs
