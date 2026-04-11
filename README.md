@@ -8,11 +8,7 @@ A serverless URL shortener built on AWS. Paste a long URL, get a short one, trac
 
 ## Architecture
 
-```
-Browser → CloudFront → API Gateway → Lambda → DynamoDB
-                ↓
-               S3 (React frontend)
-```
+![Architecture diagram](docs/architecture.png)
 
 Three Lambda functions behind API Gateway (HTTP API v2):
 
