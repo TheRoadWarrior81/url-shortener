@@ -3,6 +3,7 @@ import random
 import string
 import boto3
 import os
+import traceback
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 
@@ -15,22 +16,22 @@ def lambda_handler(event, context):
     try:
         body = json.loads(event.get("body", "{}"))
         if not isinstance(body, dict):
-            return response(400, {"error": "Request body must be a JSON object"})
+            return response(400, {"message": "Request body must be a JSON object"})
 
         original_url = body.get("original_url", "").strip()
 
         # Validate presence
         if not original_url:
-            return response(400, {"error": "URL is required"})
+            return response(400, {"message": "URL is required"})
 
         # Validate scheme
         if not original_url.startswith(("http://", "https://")):
-            return response(400, {"error": "URL must start with http:// or https://"})
+            return response(400, {"message": "URL must start with http:// or https://"})
 
         # Validate parseable URL with a real domain
         parsed = urlparse(original_url)
         if not parsed.netloc or "." not in parsed.netloc:
-            return response(400, {"error": "Invalid URL — must include a valid domain"})
+            return response(400, {"message": "Invalid URL — must include a valid domain"})
 
         # Generate unique short ID with collision check
         short_id = None
@@ -42,7 +43,7 @@ def lambda_handler(event, context):
                 break
 
         if not short_id:
-            return response(500, {"error": "Could not generate a unique ID, please try again"})
+            return response(500, {"message": "Could not generate a unique ID, please try again"})
 
         table.put_item(Item={
             "short_id": short_id,
@@ -59,9 +60,10 @@ def lambda_handler(event, context):
         })
 
     except json.JSONDecodeError:
-        return response(400, {"error": "Invalid request body"})
+        return response(400, {"message": "Invalid request body"})
     except Exception as e:
-        return response(500, {"error": str(e)})
+        print(traceback.format_exc())
+        return response(500, {"message": "Internal server error"})
 
 
 def response(status_code, body):

@@ -31,7 +31,7 @@ def lambda_handler(event, context):
         "body": json.dumps({
             "short_id": item["short_id"],
             "original_url": item["original_url"],
-            "click_count": int(item.get("click_count", 0)),
+            "clicks": int(item.get("clicks", 0)),
         }),
     }
 
