@@ -58,7 +58,7 @@ class TestRedirectLambda(unittest.TestCase):
         if "redirect" in sys.modules:
             del sys.modules["redirect"]
 
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "lambda"))
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "terraform", "lambda"))
         import redirect as redirect_module
         self.handler = redirect_module.lambda_handler
 
