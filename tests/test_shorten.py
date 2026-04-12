@@ -143,7 +143,7 @@ class TestShortenLambda(unittest.TestCase):
         result = self.handler(event, {})
         self.assertEqual(result["statusCode"], 400)
         body = json.loads(result["body"])
-        self.assertIn("error", body)
+        self.assertIn("message", body)
 
     def test_missing_body_key_returns_400(self):
         """An event with no 'body' key at all is handled without crashing."""
@@ -156,7 +156,7 @@ class TestShortenLambda(unittest.TestCase):
         result = self.handler(event, {})
         self.assertEqual(result["statusCode"], 400)
         body = json.loads(result["body"])
-        self.assertEqual(body["error"], "URL is required")
+        self.assertEqual(body["message"], "URL is required")
 
     def test_whitespace_only_url_returns_400(self):
         """original_url that is only whitespace is treated as empty."""
@@ -164,7 +164,7 @@ class TestShortenLambda(unittest.TestCase):
         result = self.handler(event, {})
         self.assertEqual(result["statusCode"], 400)
         body = json.loads(result["body"])
-        self.assertEqual(body["error"], "URL is required")
+        self.assertEqual(body["message"], "URL is required")
 
     # ------------------------------------------------------------------
     # Validation — bad URL formats
@@ -176,7 +176,7 @@ class TestShortenLambda(unittest.TestCase):
         result = self.handler(event, {})
         self.assertEqual(result["statusCode"], 400)
         body = json.loads(result["body"])
-        self.assertIn("http", body["error"])
+        self.assertIn("http", body["message"])
 
     def test_no_scheme_returns_400(self):
         """Bare hostnames with no scheme are rejected."""
@@ -190,7 +190,7 @@ class TestShortenLambda(unittest.TestCase):
         result = self.handler(event, {})
         self.assertEqual(result["statusCode"], 400)
         body = json.loads(result["body"])
-        self.assertIn("domain", body["error"])
+        self.assertIn("domain", body["message"])
 
     def test_plain_text_returns_400(self):
         """Arbitrary non-URL strings are rejected."""
@@ -208,7 +208,7 @@ class TestShortenLambda(unittest.TestCase):
         result = self.handler(event, {})
         self.assertEqual(result["statusCode"], 400)
         body = json.loads(result["body"])
-        self.assertEqual(body["error"], "Invalid request body")
+        self.assertEqual(body["message"], "Invalid request body")
 
     def test_non_object_json_body_returns_400(self):
         """A JSON array body (not an object) is rejected with 400."""
@@ -216,7 +216,7 @@ class TestShortenLambda(unittest.TestCase):
         result = self.handler(event, {})
         self.assertEqual(result["statusCode"], 400)
         body = json.loads(result["body"])
-        self.assertEqual(body["error"], "Request body must be a JSON object")
+        self.assertEqual(body["message"], "Request body must be a JSON object")
     # ------------------------------------------------------------------
     # Collision retry logic
     # ------------------------------------------------------------------
@@ -286,7 +286,7 @@ class TestShortenLambda(unittest.TestCase):
 
         self.assertEqual(result["statusCode"], 500)
         body = json.loads(result["body"])
-        self.assertIn("unique", body["error"])
+        self.assertIn("unique", body["message"])
 
     # ------------------------------------------------------------------
     # Response shape

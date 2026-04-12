@@ -70,11 +70,11 @@ class TestRedirectLambda(unittest.TestCase):
     # Happy path
     # ------------------------------------------------------------------
 
-    def test_valid_short_id_returns_301(self):
-        """A known short_id returns a 301 redirect."""
+    def test_valid_short_id_returns_302(self):
+        """A known short_id returns a 302 redirect."""
         _seed_item(self.table)
         result = self.handler(_make_event("abc123"), {})
-        self.assertEqual(result["statusCode"], 301)
+        self.assertEqual(result["statusCode"], 302)
 
     def test_redirect_location_header_is_original_url(self):
         """The Location header points to the original URL."""
@@ -112,7 +112,7 @@ class TestRedirectLambda(unittest.TestCase):
         result = self.handler(_make_event("xxxxxx"), {})
         self.assertEqual(result["statusCode"], 404)
         body = json.loads(result["body"])
-        self.assertIn("error", body)
+        self.assertIn("message", body)
 
     def test_404_does_not_increment_clicks(self):
         """A failed lookup for a missing ID doesn't affect other items."""
@@ -130,7 +130,7 @@ class TestRedirectLambda(unittest.TestCase):
         result = self.handler(_make_event(None), {})
         self.assertEqual(result["statusCode"], 400)
         body = json.loads(result["body"])
-        self.assertIn("error", body)
+        self.assertIn("message", body)
 
     def test_empty_short_id_returns_400(self):
         """An empty string short_id (after strip) returns 400."""
