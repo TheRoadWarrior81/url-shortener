@@ -56,7 +56,7 @@ class TestStatsLambda(unittest.TestCase):
         if "stats" in sys.modules:
             del sys.modules["stats"]
 
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "lambda"))
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "terraform", "lambda"))
         import stats as stats_module
         self.handler = stats_module.lambda_handler
 
@@ -82,6 +82,14 @@ class TestStatsLambda(unittest.TestCase):
         self.assertEqual(body["short_id"], "abc123")
         self.assertEqual(body["original_url"], "https://www.example.com")
         self.assertEqual(body["clicks"], 7)
+
+    def test_response_body_uses_clicks_field_name(self):
+        """Response body uses clicks key (not click_count) as API contract."""
+        _seed_item(self.table, clicks=7)
+        result = self.handler(_make_event("abc123"), {})
+        body = json.loads(result["body"])
+        self.assertIn("clicks", body)
+        self.assertNotIn("click_count", body)
 
     def test_clicks_is_integer_not_decimal(self):
         """

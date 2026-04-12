@@ -4,6 +4,7 @@ import string
 import boto3
 import os
 import traceback
+from botocore.exceptions import ClientError
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 
@@ -33,25 +34,31 @@ def lambda_handler(event, context):
         if not parsed.netloc or "." not in parsed.netloc:
             return response(400, {"message": "Invalid URL — must include a valid domain"})
 
-        # Generate unique short ID with collision check
+        # Generate unique short ID with atomic collision handling
         short_id = None
         for _ in range(MAX_RETRIES):
             candidate = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
-            result = table.get_item(Key={"short_id": candidate})
-            if "Item" not in result:
+            try:
+                table.put_item(
+                    Item={
+                        "short_id": candidate,
+                        "original_url": original_url,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "clicks": 0,
+                        "expires_at": int((datetime.now(timezone.utc) + timedelta(days=30)).timestamp())
+                    },
+                    ConditionExpression="attribute_not_exists(short_id)"
+                )
                 short_id = candidate
                 break
+            except ClientError as e:
+                error_code = e.response.get("Error", {}).get("Code")
+                if error_code == "ConditionalCheckFailedException":
+                    continue
+                raise
 
         if not short_id:
-            return response(500, {"message": "Could not generate a unique ID, please try again"})
-
-        table.put_item(Item={
-            "short_id": short_id,
-            "original_url": original_url,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "clicks": 0,
-            "expires_at": int((datetime.now(timezone.utc) + timedelta(days=30)).timestamp())
-        })
+            return response(500, {"message": "Failed to generate unique ID"})
 
         domain = os.environ["DOMAIN"]
         return response(200, {

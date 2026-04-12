@@ -73,7 +73,7 @@ class TestShortenLambda(unittest.TestCase):
         if "shorten" in sys.modules:
             del sys.modules["shorten"]
 
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "lambda"))
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "terraform", "lambda"))
         import shorten as shorten_module
         self.handler = shorten_module.lambda_handler
 
