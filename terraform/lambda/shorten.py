@@ -5,6 +5,7 @@ import boto3
 import os
 import traceback
 from botocore.exceptions import ClientError
+from boto3.dynamodb.conditions import Key
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 
@@ -33,6 +34,19 @@ def lambda_handler(event, context):
         parsed = urlparse(original_url)
         if not parsed.netloc or "." not in parsed.netloc:
             return response(400, {"message": "Invalid URL — must include a valid domain"})
+
+        existing = table.query(
+            IndexName="original-url-index",
+            KeyConditionExpression=Key("original_url").eq(original_url),
+            Limit=1
+        )
+        if existing["Items"]:
+            item = existing["Items"][0]
+            domain = os.environ["DOMAIN"]
+            return response(200, {
+                "short_url": f"https://{domain}/r/{item['short_id']}",
+                "short_id": item["short_id"]
+            })
 
         # Generate unique short ID with atomic collision handling
         short_id = None

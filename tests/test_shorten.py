@@ -28,7 +28,17 @@ def _make_table(dynamodb):
     return dynamodb.create_table(
         TableName=TABLE_NAME,
         KeySchema=[{"AttributeName": "short_id", "KeyType": "HASH"}],
-        AttributeDefinitions=[{"AttributeName": "short_id", "AttributeType": "S"}],
+        AttributeDefinitions=[
+            {"AttributeName": "short_id", "AttributeType": "S"},
+            {"AttributeName": "original_url", "AttributeType": "S"},
+        ],
+        GlobalSecondaryIndexes=[
+            {
+                "IndexName": "original-url-index",
+                "KeySchema": [{"AttributeName": "original_url", "KeyType": "HASH"}],
+                "Projection": {"ProjectionType": "ALL"},
+            }
+        ],
         BillingMode="PAY_PER_REQUEST",
     )
 
@@ -116,6 +126,18 @@ class TestShortenLambda(unittest.TestCase):
         event = _make_event({"original_url": "http://insecure.example.com"})
         result = self.handler(event, {})
         self.assertEqual(result["statusCode"], 200)
+
+    def test_duplicate_url_returns_existing_short_id(self):
+        """Submitting the same URL twice returns the existing short_id."""
+        event = _make_event({"original_url": "https://www.example.com/duplicate"})
+        first_result = self.handler(event, {})
+        second_result = self.handler(event, {})
+
+        self.assertEqual(first_result["statusCode"], 200)
+        self.assertEqual(second_result["statusCode"], 200)
+        first_body = json.loads(first_result["body"])
+        second_body = json.loads(second_result["body"])
+        self.assertEqual(first_body["short_id"], second_body["short_id"])
 
     def test_short_id_is_six_characters_alphanumeric(self):
         """Generated short_id is exactly 6 alphanumeric characters."""
