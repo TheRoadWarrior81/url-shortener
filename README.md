@@ -14,7 +14,7 @@ Three Lambda functions behind API Gateway (HTTP API v2):
 
 | Route | Lambda | What it does |
 |---|---|---|
-| `POST /shorten` | `shorten.py` | Validates URL, generates collision-safe 6-char ID, writes to DynamoDB with 30-day TTL |
+| `POST /shorten` | `shorten.py` | Validates URL, checks for duplicates via GSI, generates collision-safe 6-char ID, writes to DynamoDB with 30-day TTL |
 | `GET /r/{short_id}` | `redirect.py` | Looks up original URL, increments click counter, returns 302 |
 | `GET /stats/{short_id}` | `stats.py` | Returns original URL and click count |
 
@@ -30,10 +30,10 @@ The React frontend is deployed to a private S3 bucket served through CloudFront 
 | Hosting | S3 + CloudFront + Route 53 |
 | API | AWS API Gateway (HTTP API v2) |
 | Compute | AWS Lambda (Python 3.12) |
-| Database | DynamoDB (on-demand) |
+| Database | DynamoDB (on-demand, with GSI) |
 | IaC | Terraform |
 | TLS | AWS Certificate Manager (us-east-1) |
-| Testing | Python unittest + moto (45 tests, zero real AWS calls) |
+| Testing | pytest + moto (46 tests, zero real AWS calls) |
 | Observability | CloudWatch Logs |
 
 ---
@@ -51,15 +51,15 @@ url-shortener/
 │       ├── shorten.py
 │       ├── redirect.py
 │       └── stats.py
-└── frontend/
-    ├── src/
-    │   ├── App.tsx
-    │   └── App.css
-    └── .env.production
-tests/
-├── test_shorten.py      # 20 tests
-├── test_redirect.py     # 12 tests
-└── test_stats.py        # 13 tests
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx
+│   │   └── App.css
+│   └── .env.production
+└── tests/
+    ├── test_shorten.py      # 20 tests
+    ├── test_redirect.py     # 12 tests
+    └── test_stats.py        # 14 tests
 ```
 
 ---
@@ -67,11 +67,11 @@ tests/
 ## Running tests
 
 ```bash
-pip install 'moto[dynamodb]' pytest
+pip install -r requirements-dev.txt
 python -m pytest tests/ -v
 ```
 
-All tests mock DynamoDB with moto — no AWS credentials or live infrastructure needed. Coverage includes happy paths, validation errors, malformed input, collision retry logic, TTL correctness, and CORS headers.
+All tests mock DynamoDB with moto — no AWS credentials or live infrastructure needed. Coverage includes happy paths, validation errors, malformed input, duplicate URL detection, collision retry logic, TTL correctness, and CORS headers.
 
 ---
 
@@ -117,16 +117,19 @@ aws cloudfront create-invalidation \
 
 **CloudFront path-based routing** — rather than a separate subdomain for the API, CloudFront uses ordered cache behaviors: `/r/*` and `/stats/*` route to API Gateway, everything else serves the S3 frontend. The S3 bucket is fully private — only CloudFront can read it via an Origin Access Control policy.
 
+**Duplicate URL detection via GSI** — `shorten.py` queries a Global Secondary Index on `original_url` before generating a new ID. If the URL was already shortened, the existing short ID is returned instead of creating a duplicate entry.
+
 **Collision handling** — `shorten.py` generates a random 6-character alphanumeric ID (~56 billion possibilities), checks DynamoDB for a collision, and retries up to 3 times. At current scale this is effectively never triggered, but the logic is tested explicitly.
 
 **TTL via DynamoDB** — short URLs expire after 30 days using DynamoDB's native TTL feature. An `expires_at` Unix timestamp is written on creation; DynamoDB deletes expired items automatically with no cleanup Lambda or cron job.
 
-**IAM least privilege** — the Lambda role is scoped to exactly three DynamoDB actions: `PutItem`, `GetItem`, `UpdateItem`. No wildcards.
+**IAM least privilege** — the Lambda role is scoped to exactly four DynamoDB actions: `PutItem`, `GetItem`, `UpdateItem`, `Query`. Permissions are granted on both the table ARN and the GSI index ARN (`/index/*`). No wildcards.
+
+**Rate limiting** — API Gateway stage-level throttling is set to 100 requests/second sustained with a burst limit of 50, providing basic abuse protection without a WAF.
 
 ---
 
 ## Known limitations
 
-- No duplicate URL detection — shortening the same URL twice creates two separate entries (a GSI on `original_url` would fix this)
 - Click count requires a manual refresh — no real-time updates
 - No authentication — anyone can shorten URLs
